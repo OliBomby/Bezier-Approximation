@@ -108,7 +108,7 @@ class SliderPath:
                 cp_span = self.get_control_points()[start:end]
 
                 for t in self.calculate_subpath(cp_span):
-                    if len(self.calculatedPath) == 0 or (self.calculatedPath[-1] != t).all():
+                    if len(self.calculatedPath) == 0 or (self.calculatedPath[-1] != t).any():
                         self.calculatedPath.append(t)
 
                 start = end
