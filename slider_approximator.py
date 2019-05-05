@@ -24,7 +24,7 @@ path = (values[0] + ':' + values[1] + values[5][1:]).split('|')
 path = np.vstack([vec(i) for i in path])
 
 shape = SliderPath(pathType, path)
-shape = np.vstack(shape.calculatedPath) / 256
+shape = np.vstack(shape.calculatedPath)
 
 plt.ioff()
 plt.ion()
@@ -38,5 +38,5 @@ firstTime = time.time()
 loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded)
 print("Time took:", time.time() - firstTime)
 
-# PrintSlider2(anchors, values, 256)
-write_slider2(anchors, values, 256)
+# PrintSlider2(anchors, values, 1)
+write_slider2(anchors, values, 1)

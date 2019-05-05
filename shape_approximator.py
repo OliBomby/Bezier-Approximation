@@ -277,10 +277,18 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
 
     labels = shape_from_distances(dists, shape, shape_d, shape_l)
 
+    # Calculate initial loss
+    predictions = np.matmul(w, anchors)
+    distances = norm(labels - predictions, axis=1)
+    loss = np.mean(distances)
+    lossq = np.sqrt(np.mean(np.square(distances)))
+    print("Initial loss:", loss)
+    print("Initial loss2:", lossq)
+
     # This is the computational graph
     global_step = tf.Variable(0, trainable=False)
-    learning_rate = tf.train.exponential_decay(0.02, global_step,
-                                               1000, 0.8, staircase=False)
+    learning_rate = tf.train.exponential_decay(lossq, global_step,
+                                               1000, 0.9, staircase=False)
 
     # Labels
     labelstensor = tf.placeholder(tf.float32, shape=[num_testpoints, 2])
@@ -349,7 +357,7 @@ if __name__ == "__main__":
     shape = shape.make_shape(1)
 
     firstTime = time.time()
-    loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded=0)
+    loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded=50)
     print("Time took:", time.time() - firstTime)
 
     ##PrintSlider(anchors, length(shape))
