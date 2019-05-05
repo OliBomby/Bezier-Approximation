@@ -344,16 +344,12 @@ if __name__ == "__main__":
     num_steps = 20000
     num_testpoints = 5000
 
-    ##    from shapes import GosperCurve
-    ##    shape = GosperCurve(1)
-    ##    shape = shape.makeShape(2)
-
-    from shapes import Wave
-    shape = Wave(0.3, 0.7)
-    shape = shape.make_shape(5000)
+    from shapes import GosperCurve
+    shape = GosperCurve(1)
+    shape = shape.make_shape(1)
 
     firstTime = time.time()
-    loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded=5)
+    loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded=0)
     print("Time took:", time.time() - firstTime)
 
     ##PrintSlider(anchors, length(shape))
