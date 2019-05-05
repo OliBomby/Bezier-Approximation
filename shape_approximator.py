@@ -317,7 +317,7 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
             if np.isnan(_loss):
                 break
 
-            if step % 100 == 0 and False:
+            if step % 100 == 0:
                 last_labels = pathify(_predictions, shape, shape_d, shape_l)
 
             if step % 1000 == 0:
