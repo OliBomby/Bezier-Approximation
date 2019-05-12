@@ -55,6 +55,7 @@ class SliderPath:
         path.append(self.interpolate_vertices(i, d0))
 
         while i < len(self.calculatedPath) and self.cumulativeLength[i] < d1:
+            path.append(self.calculatedPath[i])
             i += 1
 
         path.append(self.interpolate_vertices(i, d1))
