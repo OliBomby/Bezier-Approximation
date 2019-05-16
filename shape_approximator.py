@@ -152,6 +152,10 @@ def shape_from_distances(dists, shape, shape_d, shape_l, num=None):
         while sprog > slen + 1E-6:
             sprog -= slen
             s_index += 1
+            if s_index > len(shape_d) - 1:
+                s_index = len(shape) - 2
+                sprog = slen
+                break
             slen = shape_d[s_index]
 
         points[i] = shape[s_index] + (shape[s_index + 1] - shape[s_index]) * sprog / slen
@@ -280,10 +284,7 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
     # Calculate initial loss
     predictions = np.matmul(w, anchors)
     distances = norm(labels - predictions, axis=1)
-    loss = np.mean(distances)
     lossq = np.sqrt(np.mean(np.square(distances)))
-    print("Initial loss:", loss)
-    print("Initial loss2:", lossq)
 
     # This is the computational graph
     global_step = tf.Variable(0, trainable=False)

@@ -18,6 +18,8 @@ num_testpoints = int(num_testpoints) if num_testpoints != "" else 5000
 retarded = float(retarded) if retarded != "" else 0
 
 inp = input("Paste slider code here: ")
+# with open("input.txt", "r") as f:
+#     inp = f.read()
 values = inp.split(',')
 pathType = pathTypeConversion[values[5][0]]
 path = (values[0] + ':' + values[1] + values[5][1:]).split('|')
