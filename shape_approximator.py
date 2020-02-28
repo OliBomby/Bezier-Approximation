@@ -6,6 +6,10 @@ from scipy.special.cython_special import binom
 import time
 
 
+times1 = []
+times2 = []
+
+
 def print_slider(anchors, plen=1, s=192, o=np.array([256, 192])):
     li = np.round(anchors * s + o, 0)
     for i in range(len(li) - 1):
@@ -131,6 +135,31 @@ def powers(n, m):
     return pwrs
 
 
+def pathify2(pred, template):
+    num = pred.shape[0]
+    pred = np.vstack([template[0], pred, template[-1]])
+    pred_d = distance_array(pred)
+    pred_sum = np.sum(pred_d)
+
+    num_tmpl = len(template)
+    points = np.empty([num, 2])
+    sprog = 0
+    for i in range(num):
+        sprog += pred_d[i]
+
+        div = sprog / pred_sum * (num_tmpl - 1)
+        f = int(np.floor(div))
+        c = int(np.ceil(div))
+        r = div - f
+
+        pf = template[f]
+        pc = template[c]
+        diff = pc - pf
+
+        points[i] = pf + diff * r
+    return points
+
+
 def pathify(pred, shape, shape_d, shape_l):
     num = pred.shape[0]
     pred = np.vstack([shape[0], pred, shape[-1]])
@@ -249,11 +278,22 @@ def plot_distribution(anchors, shape):
 
 def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0):
     # Generate the weights for the bezier conversion
+    print("Generating weights...")
     w = generate_weights(num_anchors, num_testpoints)
     shape_d = distance_array(shape)
     shape_l = np.sum(shape_d)
 
+    # Generate pathify template
+    print("Initializing pathify template...")
+    num_templatepoints = 1000
+    template_distance = shape_l / (num_templatepoints - 1)
+    dists = [0]
+    for i in range(num_templatepoints - 1):
+        dists.append(template_distance)
+    template = shape_from_distances(dists, shape, shape_d, shape_l)
+
     # Initialize the anchors
+    print("Initializing anchors...")
     dists = []
     last = 0
     for i in range(num_anchors):
@@ -272,6 +312,7 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
     middleanchors += np.random.rand(num_trainable_anchors, 2) * retarded
 
     # Initialize the labels
+    print("Initializing test points...")
     dists = []
     last = 0
     for i in range(num_testpoints):
@@ -282,11 +323,13 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
     labels = shape_from_distances(dists, shape, shape_d, shape_l)
 
     # Calculate initial loss
+    print("Calculating initial loss...")
     predictions = np.matmul(w, anchors)
     distances = norm(labels - predictions, axis=1)
     lossq = np.sqrt(np.mean(np.square(distances)))
 
     # This is the computational graph
+    print("Building the computational graph...")
     global_step = tf.Variable(0, trainable=False)
     learning_rate = tf.train.exponential_decay(lossq, global_step,
                                                1000, 0.9, staircase=False)
@@ -315,9 +358,11 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
     last_labels = labels
     _loss = 0
     with tf.Session() as sess:
+        print("Initializing global variables...")
         sess.run(tf.global_variables_initializer())
         loss_list = []
 
+        print("Starting training loop")
         for step in range(num_steps):
             _loss, _predictions, _anchors, _train_step, _learning_rate = sess.run(
                 [loss, predictions, anchors, train_step, learning_rate],
@@ -327,7 +372,8 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
                 break
 
             if step % 100 == 0:
-                last_labels = pathify(_predictions, shape, shape_d, shape_l)
+                # last_labels = pathify(_predictions, shape, shape_d, shape_l)
+                last_labels = pathify2(_predictions, template)
 
             if step % 1000 == 0:
                 loss_list.append(np.log(_loss))
@@ -352,6 +398,7 @@ if __name__ == "__main__":
     num_anchors = 500
     num_steps = 20000
     num_testpoints = 5000
+    num_templatepoints = 1000
 
     from shapes import GosperCurve
     shape = GosperCurve(1)
@@ -360,6 +407,8 @@ if __name__ == "__main__":
     firstTime = time.time()
     loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded=50)
     print("Time took:", time.time() - firstTime)
+    print("Times 1:", np.mean(times1))
+    print("Times 2:", np.mean(times2))
 
     ##PrintSlider(anchors, length(shape))
     write_slider(anchors, total_length(shape))
