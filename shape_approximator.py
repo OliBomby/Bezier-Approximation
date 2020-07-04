@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib
 import matplotlib.pyplot as plt
 from numpy.linalg import norm
 from scipy.special.cython_special import binom
@@ -8,6 +9,9 @@ import time
 
 times1 = []
 times2 = []
+
+matplotlib.use('TkAgg')
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
 
 
 def print_slider(anchors, plen=1, s=192, o=np.array([256, 192])):
@@ -58,6 +62,8 @@ def write_slider(anchors, plen=1, s=192, o=np.array([256, 192])):
     with open("slidercode.txt", "w+") as f:
         f.write("%s,%s,0,2,0,%s,1,%s" % (int(p1[0]), int(p1[1]), ret, plen * s))
 
+    print("Successfully saved slidercode to slidercode.txt")
+
 
 def write_slider2(anchors, values, s):
     li = np.round(anchors * s, 0)
@@ -77,6 +83,8 @@ def write_slider2(anchors, values, s):
     with open("slidercode.txt", "w+") as f:
         f.write(",".join(values))
 
+    print("Successfully saved slidercode to slidercode.txt")
+
 
 def print_anchors(anchors):
     ret = ""
@@ -85,16 +93,22 @@ def print_anchors(anchors):
     print(ret)
 
 
-def plot(ll, a, p):
-    plt.subplot(1, 2, 1)
-    plt.cla()
-    plt.plot(ll)
+def plot(ll, a, p, l):
+    ax1.cla()
+    ax1.plot(ll)
 
-    plt.subplot(1, 2, 2)
-    plt.cla()
-    plt.axis('equal')
-    plt.plot(p[:, 0], p[:, 1], color="green")
-    plt.plot(a[:, 0], a[:, 1], color="red")
+    ax2.cla()
+    ax2.axis('equal')
+    ax2.plot(p[:, 0], p[:, 1], color="green")
+    # ax2.plot(a[:, 0], a[:, 1], color="red")
+
+    a = distance_array(l)
+    ax3.cla()
+    ax3.plot(a, color="red")
+
+    a = distance_array(p)
+    ax4.cla()
+    ax4.plot(a, color="green")
 
     plt.draw()
     plt.pause(0.0001)
@@ -102,10 +116,18 @@ def plot(ll, a, p):
 
 def plot_alpha(l):
     a = np.clip(30 / len(l), 0, 1)
-    plt.subplot(1, 2, 2)
-    plt.cla()
-    plt.axis('equal')
-    plt.scatter(l[:, 0], l[:, 1], color='green', alpha=a, marker='.')
+    ax2.cla()
+    ax2.axis('equal')
+    ax2.scatter(l[:, 0], l[:, 1], color='green', alpha=a, marker='.')
+
+    plt.draw()
+    plt.pause(0.0001)
+
+
+def plot_vel_distr(l):
+    a = distance_array(l)
+    ax3.cla()
+    ax3.plot(a)
 
     plt.draw()
     plt.pause(0.0001)
@@ -140,6 +162,33 @@ def pathify2(pred, template):
     pred = np.vstack([template[0], pred, template[-1]])
     pred_d = distance_array(pred)
     pred_sum = np.sum(pred_d)
+
+    num_tmpl = len(template)
+    points = np.empty([num, 2])
+    sprog = 0
+    for i in range(num):
+        sprog += pred_d[i]
+
+        div = sprog / pred_sum * (num_tmpl - 1)
+        f = int(np.floor(div))
+        c = int(np.ceil(div))
+        r = div - f
+
+        pf = template[f]
+        pc = template[c]
+        diff = pc - pf
+
+        points[i] = pf + diff * r
+    return points
+
+
+def pathify2_with_endpoints(pred, template):
+    num = pred.shape[0]
+    pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
+    # pred_sum = np.sum(pred_d)
+    pred_sum = 0
+    for d in pred_d:
+        pred_sum += d
 
     num_tmpl = len(template)
     points = np.empty([num, 2])
@@ -235,6 +284,18 @@ def generate_weights2(num_anchors, num_testpoints):
     return w
 
 
+def generate_weights_with_endpoints(num_anchors, num_testpoints):
+    order = num_anchors - 1
+    w = np.zeros([num_testpoints, num_anchors])
+    binoms = np.array([binom(order, k) for k in range(num_anchors)])
+    for i in range(num_testpoints):
+        t = i / (num_testpoints - 1)
+        m1 = np.array(powers(order, 1 - t)[::-1])
+        m2 = np.array(powers(order, t))
+        w[i, :] = binoms * m1 * m2
+    return w
+
+
 def get_weight(anchor, n, t):
     ntm = 0
     ntp = 0
@@ -284,6 +345,7 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
     shape_l = np.sum(shape_d)
 
     # Generate pathify template
+    # Means the same target shape but with equal spacing, so pathify runs in linear time
     print("Initializing pathify template...")
     num_templatepoints = 1000
     template_distance = shape_l / (num_templatepoints - 1)
@@ -378,7 +440,7 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
             if step % 1000 == 0:
                 loss_list.append(np.log(_loss))
                 print("Step ", step, "Loss ", _loss, "Leaning rate ", _learning_rate)
-                plot(loss_list, _anchors, _predictions)
+                plot(loss_list, _anchors, _predictions, last_labels)
 
             if _loss < 1e-11:
                 break
@@ -387,6 +449,66 @@ def approximate_shape(shape, num_anchors, num_steps=5000, num_testpoints=1000, r
 
     print("Final loss: ", _loss)
     return _loss, last_anchors
+
+
+def approximate_shape2(shape, num_anchors, num_steps=5000, num_testpoints=1000):
+    # Generate the weights for the bezier conversion
+    print("Generating weights...")
+    w = generate_weights_with_endpoints(num_anchors, num_testpoints)
+    shape_d = distance_array(shape)
+    shape_l = np.sum(shape_d)
+
+    # Generate pathify template
+    # Means the same target shape but with equal spacing, so pathify runs in linear time
+    print("Initializing pathify template...")
+    num_templatepoints = 1000
+    template_distance = shape_l / (num_templatepoints - 1)
+    dists = [0]
+    for i in range(num_templatepoints - 1):
+        dists.append(template_distance)
+    template = shape_from_distances(dists, shape, shape_d, shape_l)
+
+    # Initialize the anchors
+    print("Initializing test points with reasonable velocity distribution...")
+    dists = []
+    last = 0
+    for i in range(num_anchors):
+        t = i / (num_anchors - 1)
+        dists.append(t - last)
+        last = t
+
+    anchors = shape_from_distances(dists, shape, shape_d, shape_l)
+    points = np.matmul(w, anchors)
+
+    labels = pathify2_with_endpoints(points, template)
+
+    # Calculate least squares matrix
+    print("Calculating least squares matrix...")
+    wt = np.transpose(w)
+    # least_squares_matrix = np.matmul(np.linalg.inv(np.matmul(wt, w)), wt)
+    arr = np.matmul(wt, w)
+
+    # Training loop
+    anchors = None
+    loss = 0
+    loss_list = []
+
+    print("Starting training loop")
+    for step in range(num_steps):
+        # anchors = np.matmul(least_squares_matrix, labels)
+        anchors = np.linalg.solve(arr, np.matmul(wt, labels))
+        points = np.matmul(w, anchors)
+        diff = labels - points
+        loss = np.mean(np.square(diff))
+
+        loss_list.append(np.log(loss))
+        print("Step ", step, "Loss ", loss, "Leaning rate ", 1)
+        plot(loss_list, anchors, points, labels)
+
+        labels = pathify2_with_endpoints(points, template)
+
+    print("Final loss: ", loss)
+    return loss, anchors
 
 
 if __name__ == "__main__":
