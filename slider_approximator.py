@@ -13,9 +13,9 @@ def convert_slider(shape, num_anchors, num_steps, num_testpoints, retarded):
     plot_alpha(shape)
 
     firstTime = time.time()
-    loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded)
+    # loss, anchors = approximate_shape(shape, num_anchors, num_steps, num_testpoints, retarded)
     # loss, anchors = approximate_shape2(shape, num_anchors, num_steps, num_testpoints)
-    # loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints)
+    loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints, retarded)
     print("Time took:", time.time() - firstTime)
     return loss, anchors
 
