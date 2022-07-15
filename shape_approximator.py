@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
+from tensorflow.compat.v1.keras.backend import set_session
 import matplotlib
 import matplotlib.pyplot as plt
 from numpy.linalg import norm
@@ -93,14 +95,22 @@ def print_anchors(anchors):
     print(ret)
 
 
+def plot_points(p):
+    ax2.cla()
+    ax2.axis('equal')
+    ax2.plot(p[:, 0], p[:, 1], color="green")
+
+
 def plot(ll, a, p, l):
     ax1.cla()
     ax1.plot(ll)
+    ax1.set_yscale('log')
 
     ax2.cla()
     ax2.axis('equal')
     ax2.plot(p[:, 0], p[:, 1], color="green")
-    # ax2.plot(a[:, 0], a[:, 1], color="red")
+    if a is not None:
+        ax2.plot(a[:, 0], a[:, 1], color="red")
 
     a = distance_array(l)
     ax3.cla()
@@ -170,8 +180,8 @@ def pathify2(pred, template):
         sprog += pred_d[i]
 
         div = sprog / pred_sum * (num_tmpl - 1)
-        f = int(np.floor(div))
-        c = int(np.ceil(div))
+        f = max(int(np.floor(div)), 0)
+        c = min(int(np.ceil(div)), num_tmpl - 1)
         r = div - f
 
         pf = template[f]
@@ -185,10 +195,10 @@ def pathify2(pred, template):
 def pathify2_with_endpoints(pred, template):
     num = pred.shape[0]
     pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
-    # pred_sum = np.sum(pred_d)
-    pred_sum = 0
-    for d in pred_d:
-        pred_sum += d
+    pred_sum = np.sum(pred_d)
+    # pred_sum = 0
+    # for d in pred_d:
+    #     pred_sum += d
 
     num_tmpl = len(template)
     points = np.empty([num, 2])
@@ -197,8 +207,8 @@ def pathify2_with_endpoints(pred, template):
         sprog += pred_d[i]
 
         div = sprog / pred_sum * (num_tmpl - 1)
-        f = int(np.floor(div))
-        c = int(np.ceil(div))
+        f = max(int(np.floor(div)), 0)
+        c = min(int(np.ceil(div)), num_tmpl - 1)
         r = div - f
 
         pf = template[f]
@@ -285,6 +295,9 @@ def generate_weights2(num_anchors, num_testpoints):
 
 
 def generate_weights_with_endpoints(num_anchors, num_testpoints):
+    if num_anchors > 1000:
+        return generate_weights2_with_endpoints(num_anchors, num_testpoints)
+
     order = num_anchors - 1
     w = np.zeros([num_testpoints, num_anchors])
     binoms = np.array([binom(order, k) for k in range(num_anchors)])
@@ -293,6 +306,33 @@ def generate_weights_with_endpoints(num_anchors, num_testpoints):
         m1 = np.array(powers(order, 1 - t)[::-1])
         m2 = np.array(powers(order, t))
         w[i, :] = binoms * m1 * m2
+    return w
+
+
+def generate_weights2_with_endpoints(num_anchors, num_testpoints):
+    n = num_anchors - 1
+    w = np.zeros([num_testpoints, num_anchors])
+    for i in range(num_testpoints):
+        t = i / (num_testpoints - 1)
+
+        middle = int(round(t * n))
+        cm = get_weight(middle, n, t)
+        w[i, middle] = cm
+
+        c = cm
+        for k in range(middle, n):
+            c = c * (n - k) / (k + 1) / (1 - t) * t  # Move right
+            w[i, k + 1] = c
+            if c == 0:
+                break
+
+        c = cm
+        for k in range(middle - 1, -1, -1):
+            c = c / (n - k) * (k + 1) * (1 - t) / t  # Move left
+            w[i, k] = c
+            if c == 0:
+                break
+
     return w
 
 
@@ -493,6 +533,10 @@ def approximate_shape2(shape, num_anchors, num_steps=5000, num_testpoints=1000):
     loss = 0
     loss_list = []
 
+    best_anchors = None
+    best_labels = None
+    best_loss = np.inf
+
     print("Starting training loop")
     for step in range(num_steps):
         # anchors = np.matmul(least_squares_matrix, labels)
@@ -502,12 +546,110 @@ def approximate_shape2(shape, num_anchors, num_steps=5000, num_testpoints=1000):
         loss = np.mean(np.square(diff))
 
         loss_list.append(np.log(loss))
-        print("Step ", step, "Loss ", loss, "Leaning rate ", 1)
+        print("Step ", step, "Loss ", loss)
         plot(loss_list, anchors, points, labels)
+
+        if loss < best_loss:
+            best_loss = loss
+            best_anchors = anchors
+            best_labels = labels
 
         labels = pathify2_with_endpoints(points, template)
 
+    points = np.matmul(w, best_anchors)
+    diff = best_labels - points
+    loss = np.mean(np.square(diff))
+
+    plot(loss_list, best_anchors, points, best_labels)
     print("Final loss: ", loss)
+    return loss, best_anchors
+
+
+def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000):
+    # Generate the weights for the bezier conversion
+    print("Generating weights...")
+    w = generate_weights_with_endpoints(num_anchors, num_testpoints)
+    shape_d = distance_array(shape)
+    shape_l = np.sum(shape_d)
+
+    # Generate pathify template
+    # Means the same target shape but with equal spacing, so pathify runs in linear time
+    print("Initializing pathify template...")
+    num_templatepoints = 1000
+    template_distance = shape_l / (num_templatepoints - 1)
+    dists = [0]
+    for i in range(num_templatepoints - 1):
+        dists.append(template_distance)
+    template = shape_from_distances(dists, shape, shape_d, shape_l)
+
+    # Generate initial labels
+    label_distance = shape_l / (num_testpoints - 1)
+    dists = [0]
+    for i in range(num_testpoints - 1):
+        dists.append(label_distance)
+    labels2 = shape_from_distances(dists, shape, shape_d, shape_l)
+
+    # Generate initial anchors
+    # anchor_distance = shape_l / (num_anchors - 1)
+    # dists = [0]
+    # for i in range(num_anchors - 1):
+    #     dists.append(label_distance)
+    # anchors = shape_from_distances(dists, shape, shape_d, shape_l)
+
+    # Calculate least squares matrix
+    print("Calculating labels to optimal points matrix...")
+    wt = np.transpose(w)
+    anchor_matrix = np.matmul(np.linalg.inv(np.matmul(wt, w)), wt)
+    # arr = np.matmul(wt, w)
+    best_point_matrix = np.matmul(w, anchor_matrix)
+
+    print("Optimizing label positions...")
+    c = tf.compat.v1.ConfigProto()
+    c.gpu_options.allow_growth = True
+    sess = tf.compat.v1.Session(config=c)
+    set_session(sess)
+
+    mse = tf.keras.losses.MeanSquaredError()
+    # opt = tf.optimizers.Adadelta(learning_rate=200)
+    opt = tf.optimizers.Adagrad(learning_rate=200)
+    # opt = tf.optimizers.SGD(learning_rate=200)
+
+    # s = tf.Variable(np.linspace(0, 1, num_testpoints))
+    # labels = tfp.math.interp_regular_1d_grid(s, 0.0, 1.0, template, axis=0)
+    labels = tf.Variable(labels2, constraint=lambda x: pathify2_with_endpoints(x.numpy(), template))
+    best_points = tf.matmul(best_point_matrix, labels)
+
+    loss_func = lambda: mse(labels, best_points)
+
+    losses = []
+    for i in range(num_steps):
+        opt.minimize(loss_func, var_list=[labels])
+        #
+        labels3 = labels.numpy()
+        # labels3 = labels2
+
+        # anchors = np.linalg.solve(arr, np.matmul(wt, labels3))
+        # anchors = np.matmul(anchor_matrix, labels3)
+        # points = np.matmul(w, anchors)
+        points = np.matmul(best_point_matrix, labels3)
+        loss = np.mean(np.square(labels3 - points))
+
+        # labels.assign(points)
+        # labels2 = pathify2_with_endpoints(points, template)
+
+        losses.append(loss)
+        plot(losses, None, points, labels3)
+        # plt.pause(5)
+
+    labels3 = labels.numpy()
+    # labels3 = labels2
+    anchors = np.matmul(anchor_matrix, labels3)
+    points = np.matmul(w, anchors)
+    loss = np.mean(np.square(labels3 - points))
+
+    losses.append(loss)
+    plot(losses, anchors, points, labels3)
+
     return loss, anchors
 
 
