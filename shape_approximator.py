@@ -121,11 +121,11 @@ def bezier(anchors, num_points):
     return np.matmul(w, anchors)
 
 
-def pathify3_with_endpoints(pred, template):
+def pathify(pred, interpolator):
     pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
     pred_cumsum = np.cumsum(pred_d)
     progs = pred_cumsum / pred_cumsum[-1]
-    points = template(progs)
+    points = interpolator(progs)
     return points
 
 
@@ -138,49 +138,13 @@ def generate_weights_from_t(t):
 
 def generate_weights(num_anchors, num_testpoints):
     if num_anchors > 1000:
-        return generate_weights2(num_anchors, num_testpoints)
-
-    t = np.linspace(0.5 / num_testpoints, 1 - 0.5 / num_testpoints, num_testpoints)
-    return generate_weights_from_t(t)
-
-
-# This function is more numerically stable for high anchor count
-def generate_weights2(num_anchors, num_testpoints):
-    n = num_anchors - 1
-    w = np.zeros([num_testpoints, num_anchors])
-    for i in range(num_testpoints):
-        t = (i + 0.5) / num_testpoints
-
-        middle = int(round(t * n))
-        cm = get_weight(middle, n, t)
-        w[i, middle] = cm
-
-        c = cm
-        for k in range(middle, n):
-            c = c * (n - k) / (k + 1) / (1 - t) * t  # Move right
-            w[i, k + 1] = c
-            if c == 0:
-                break
-
-        c = cm
-        for k in range(middle - 1, -1, -1):
-            c = c / (n - k) * (k + 1) * (1 - t) / t  # Move left
-            w[i, k] = c
-            if c == 0:
-                break
-
-    return w
-
-
-def generate_weights_with_endpoints(num_anchors, num_testpoints):
-    if num_anchors > 1000:
-        return generate_weights2_with_endpoints(num_anchors, num_testpoints)
+        return generate_weights_stable(num_anchors, num_testpoints)
 
     t = np.linspace(0, 1, num_testpoints)
     return generate_weights_from_t(t)
 
 
-def generate_weights2_with_endpoints(num_anchors, num_testpoints):
+def generate_weights_stable(num_anchors, num_testpoints):
     n = num_anchors - 1
     w = np.zeros([num_testpoints, num_anchors])
     for i in range(num_testpoints):
@@ -262,33 +226,33 @@ def get_interpolator(shape):
 
 def test_anchors(anchors, shape, num_testpoints):
     new_shape = bezier(anchors, num_testpoints)
-    labels = pathify3_with_endpoints(new_shape, get_interpolator(shape))
+    labels = pathify(new_shape, get_interpolator(shape))
     loss = np.mean(np.square(labels - new_shape))
     print("loss: %s" % loss)
 
 
 def plot_distribution(anchors, shape):
     reduced_shape = bezier(anchors, 1000)
-    reduced_labels = pathify3_with_endpoints(reduced_shape, get_interpolator(shape))
+    reduced_labels = pathify(reduced_shape, get_interpolator(shape))
     plot_alpha(reduced_labels)
 
 
-def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0):
+def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0):
     # Generate the weights for the bezier conversion
     print("Generating weights...")
-    w = generate_weights_with_endpoints(num_anchors, num_testpoints)
+    w = generate_weights(num_anchors, num_testpoints)
     wt = np.transpose(w)
 
     # Generate pathify template
     # Means the same target shape but with equal spacing, so pathify runs in linear time
-    print("Initializing pathify template...")
-    template = get_interpolator(shape)
+    print("Initializing interpolation...")
+    interpolator = get_interpolator(shape)
 
     # Initialize the anchors
-    print("Initializing test points with reasonable velocity distribution...")
-    anchors = template(np.linspace(0, 1, num_anchors))
+    print("Initializing anchors and test points...")
+    anchors = interpolator(np.linspace(0, 1, num_anchors))
     points = np.matmul(w, anchors)
-    labels = pathify3_with_endpoints(points, template)
+    labels = pathify(points, interpolator)
 
     # Scamble this shit
     if retarded > 0:
@@ -312,12 +276,12 @@ def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, 
     # Training loop
     loss_list = []
     step = 0
-    print("Starting training loop")
+    print("Starting optimization loop")
     for step in range(1, num_steps):
         points = np.matmul(w, anchors)
 
         if step % 11 == 0:
-            labels = pathify3_with_endpoints(points, template)
+            labels = pathify(points, interpolator)
 
         diff = labels - points
         loss = np.mean(np.square(diff))
@@ -368,7 +332,7 @@ if __name__ == "__main__":
     # shape = shape.make_shape(1)
 
     firstTime = time.time()
-    loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints)
+    loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints)
     print("Time took:", time.time() - firstTime)
 
     ##PrintSlider(anchors, length(shape))
