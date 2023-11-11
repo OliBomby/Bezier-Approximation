@@ -119,16 +119,7 @@ def main2():
 
         loss, anchors = convert_slider(shape, num_anchors, 10000, 5000, 0)
 
-        li = np.round(anchors * 1, 0)
-        for i in range(len(li) - 1):
-            if (li[i] == li[i + 1]).all():
-                li[i + 1] += 1
-                i -= 2
-        li = li.tolist()
-        p1 = li.pop(0)
-        ret = "B"
-        for p in li:
-            ret += "|" + str(int(p[0])) + ":" + str(int(p[1]))
+        p1, ret = encode_anchors(anchors)
         values[0] = str(int(p1[0]))
         values[1] = str(int(p1[1]))
         values[5] = ret
