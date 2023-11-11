@@ -7,11 +7,9 @@ import matplotlib.pyplot as plt
 from numpy.linalg import norm
 from scipy.interpolate import interp1d
 from scipy.special.cython_special import binom
+from scipy.special import comb
 import time
 
-
-times1 = []
-times2 = []
 
 matplotlib.use('TkAgg')
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
@@ -155,16 +153,21 @@ def distance_array(shape):
     return norm(np.diff(shape, axis=0), axis=1)
 
 
+def dist_cumsum(shape):
+    return np.pad(np.cumsum(distance_array(shape)), (1, 0))
+
+
 def bezier(anchors, num_points):
     w = generate_weights(anchors.shape[0], num_points)
     return np.matmul(w, anchors)
 
 
 def powers(n, m):
-    pwrs = [1]
-    for b in range(n):
-        pwrs.append(pwrs[b] * m)
-    return pwrs
+    return np.power(m, np.arange(n))
+
+
+def powers_reversed(n, m):
+    return np.power(m, np.arange(n - 1, -1, -1))
 
 
 def pathify2(pred, template):
@@ -223,7 +226,7 @@ def pathify3_with_endpoints(pred, template):
     pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
     pred_cumsum = np.cumsum(pred_d)
     progs = pred_cumsum / pred_cumsum[-1]
-    points = interp1d(np.linspace(0, 1, len(template)), template, axis=0, assume_sorted=True, copy=False)(progs)
+    points = template(progs)
     return points
 
 
@@ -259,19 +262,19 @@ def shape_from_distances(dists, shape, shape_d, shape_l, num=None):
     return points
 
 
+def generate_weights_from_t(t):
+    binoms = comb(num_anchors - 1, np.arange(num_anchors))
+    p = np.power(t[:, np.newaxis], np.arange(num_anchors))
+    w = binoms * p[::-1, ::-1] * p
+    return w
+
+
 def generate_weights(num_anchors, num_testpoints):
     if num_anchors > 1000:
         return generate_weights2(num_anchors, num_testpoints)
 
-    order = num_anchors - 1
-    w = np.zeros([num_testpoints, num_anchors])
-    binoms = np.array([binom(order, k) for k in range(num_anchors)])
-    for i in range(num_testpoints):
-        t = (i + 0.5) / num_testpoints
-        m1 = np.array(powers(order, 1 - t)[::-1])
-        m2 = np.array(powers(order, t))
-        w[i, :] = binoms * m1 * m2
-    return w
+    t = np.linspace(0.5 / num_testpoints, 1 - 0.5 / num_testpoints, num_testpoints)
+    return generate_weights_from_t(t)
 
 
 # This function is more numerically stable for high anchor count
@@ -300,48 +303,14 @@ def generate_weights2(num_anchors, num_testpoints):
                 break
 
     return w
-    
-def anchor_positions_on_curve(anchors):
-    num_anchors = len(anchors)
-    n = num_anchors - 1
-    positions = []
-    for i in range(num_anchors):
-        t = i / n
-        cm = get_weight(i, n, t)
-        pos = anchors[i] * cm
-        
-        c = cm
-        for k in range(i, n):
-            c = c * (n - k) / (k + 1) / (1 - t) * t  # Move right
-            pos += anchors[k + 1] * c
-            if c == 0:
-                break
-
-        c = cm
-        for k in range(i - 1, -1, -1):
-            c = c / (n - k) * (k + 1) * (1 - t) / t  # Move left
-            pos += anchors[k] * c
-            if c == 0:
-                break
-        
-        positions.append(pos)
-
-    return positions
 
 
 def generate_weights_with_endpoints(num_anchors, num_testpoints):
     if num_anchors > 1000:
         return generate_weights2_with_endpoints(num_anchors, num_testpoints)
 
-    order = num_anchors - 1
-    w = np.zeros([num_testpoints, num_anchors])
-    binoms = np.array([binom(order, k) for k in range(num_anchors)])
-    for i in range(num_testpoints):
-        t = i / (num_testpoints - 1)
-        m1 = np.array(powers(order, 1 - t)[::-1])
-        m2 = np.array(powers(order, t))
-        w[i, :] = binoms * m1 * m2
-    return w
+    t = np.linspace(0, 1, num_testpoints)
+    return generate_weights_from_t(t)
 
 
 def generate_weights2_with_endpoints(num_anchors, num_testpoints):
@@ -391,15 +360,41 @@ def get_weight(anchor, n, t):
     cm = cm * (1 - t) ** (n - anchor - ntm) * t ** (anchor - ntp)
     return cm
 
+def anchor_positions_on_curve(anchors):
+    num_anchors = len(anchors)
+    n = num_anchors - 1
+    positions = []
+    for i in range(num_anchors):
+        t = i / n
+        cm = get_weight(i, n, t)
+        pos = anchors[i] * cm
+
+        c = cm
+        for k in range(i, n):
+            c = c * (n - k) / (k + 1) / (1 - t) * t  # Move right
+            pos += anchors[k + 1] * c
+            if c == 0:
+                break
+
+        c = cm
+        for k in range(i - 1, -1, -1):
+            c = c / (n - k) * (k + 1) * (1 - t) / t  # Move left
+            pos += anchors[k] * c
+            if c == 0:
+                break
+
+        positions.append(pos)
+
+    return positions
+
 
 def test_anchors(anchors, shape, num_testpoints):
-    shape_d = distance_array(shape)
-    shape_l = np.sum(shape_d)
+    shape_d_cumsum = dist_cumsum(shape)
+    template = interp1d(shape_d_cumsum / shape_d_cumsum[-1], shape, axis=0, assume_sorted=True, copy=False)
 
     new_shape = bezier(anchors, num_testpoints)
-    labels = pathify(new_shape, shape, shape_d, shape_l)
-    distances = norm(labels - new_shape, axis=1)
-    loss = np.mean(np.square(distances))
+    labels = pathify3_with_endpoints(new_shape, template)
+    loss = np.mean(np.square(labels - new_shape))
     print("loss: %s" % loss)
 
 
@@ -609,32 +604,18 @@ def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, 
     print("Generating weights...")
     w = generate_weights_with_endpoints(num_anchors, num_testpoints)
     wt = np.transpose(w)
-    shape_d = distance_array(shape)
-    shape_l = np.sum(shape_d)
+    shape_d_cumsum = dist_cumsum(shape)
 
     # Generate pathify template
     # Means the same target shape but with equal spacing, so pathify runs in linear time
     print("Initializing pathify template...")
-    num_templatepoints = 1000
-    template_distance = shape_l / (num_templatepoints - 1)
-    dists = [0]
-    for i in range(num_templatepoints - 1):
-        dists.append(template_distance)
-    template = shape_from_distances(dists, shape, shape_d, shape_l)
+    template = interp1d(shape_d_cumsum / shape_d_cumsum[-1], shape, axis=0, assume_sorted=True, copy=False)
 
     # Initialize the anchors
     print("Initializing test points with reasonable velocity distribution...")
-    dists = []
-    last = 0
-    for i in range(num_anchors):
-        t = i / (num_anchors - 1)
-        dists.append(t - last)
-        last = t
-
-    anchors = shape_from_distances(dists, shape, shape_d, shape_l)
+    anchors = template(np.linspace(0, 1, num_anchors))
     points = np.matmul(w, anchors)
-
-    labels = pathify2_with_endpoints(points, template)
+    labels = pathify3_with_endpoints(points, template)
 
     # Scamble this shit
     if retarded > 0:
@@ -644,72 +625,92 @@ def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, 
         anchors += random_offset
 
     # Set up adam optimizer parameters
-    learning_rate = 0.1  # * np.sqrt(np.mean(np.square(labels - points)))
-    decay_rate = np.power(0.9, 1 / 1000)
+    learning_rate = 8  # * np.sqrt(np.mean(np.square(labels - points)))
+    # decay_rate = np.power(1, 1 / 100)
     b1 = 0.9
-    b2 = 0.999
+    b2 = 0.92
     epsilon = 1E-8
     m = np.zeros(anchors.shape)
     v = np.zeros(anchors.shape)
 
+    # Set up RMSProp optimizer parameters
+    # learning_rate = 10
+    # decay = 0.99
+    # cache = np.zeros(anchors.shape)
+
+    # Set up mask for constraining endpoints
+    learnable_mask = np.zeros(anchors.shape)
+    learnable_mask[1:-1] = 1
+
     # Training loop
     loss_list = []
+    step = 0
     print("Starting training loop")
     for step in range(1, num_steps):
         points = np.matmul(w, anchors)
+
+        if step % 11 == 0:
+            labels = pathify3_with_endpoints(points, template)
+
+        # labels = pathify3_with_endpoints(points, template)
         diff = labels - points
         loss = np.mean(np.square(diff))
 
         # Calculate gradients
         grad = -1 / num_anchors * np.matmul(wt, diff)
 
+        # Apply learnable mask
+        grad *= learnable_mask
+
         # Update with adam optimizer
         m = b1 * m + (1 - b1) * grad
         v = b2 * v + (1 - b2) * np.square(grad)
         m_corr = m / (1 - b1**step)
         v_corr = v / (1 - b2**step)
-
         anchors -= learning_rate * m_corr / (np.sqrt(v_corr) + epsilon)
+
+        # Update with RMSProp optimizer
+        # cache = decay * cache + (1 - decay) * np.square(grad)
+        # anchors -= learning_rate * grad / (np.sqrt(cache) + epsilon)
+
+        # anchors -= learning_rate * grad
 
         loss_list.append(loss)
 
-        if step % 1000 == 0:
-            print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
-            plot(loss_list, anchors, points, labels)
+        # if step % 1 == 0:
+        #     print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
+        #     plot(loss_list, anchors, points, labels)
+        if loss < 0.01:
+            break
 
-        if step % 100 == 0:
-            labels = pathify3_with_endpoints(points, template)
-
-        learning_rate *= decay_rate
+        # learning_rate *= decay_rate
 
     points = np.matmul(w, anchors)
     loss = np.mean(np.square(labels - points))
 
-    plot(loss_list, anchors, points, labels)
-    print("Final loss: ", loss)
+    # plot(loss_list, anchors, points, labels)
+    print("Final loss: ", loss, step + 1)
     return loss, anchors
 
 if __name__ == "__main__":
-    plt.ion()
-    plt.show()
+    # plt.ion()
+    # plt.show()
 
-    num_anchors = 20
-    num_steps = 20000
-    num_testpoints = 5000
-    num_templatepoints = 1000
+    num_anchors = 10
+    num_steps = 10000
+    num_testpoints = 200
 
-    from shapes import GosperCurve
-    shape = GosperCurve(1)
-    shape = shape.make_shape(1)
+    from shapes import CircleArc
+    shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
+    shape = shape.make_shape(1000)
 
     firstTime = time.time()
-    loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints, retarded=50)
+    loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints)
     print("Time took:", time.time() - firstTime)
-    print("Times 1:", np.mean(times1))
-    print("Times 2:", np.mean(times2))
 
     ##PrintSlider(anchors, length(shape))
     write_slider(anchors, total_length(shape))
 
     test_anchors(anchors, shape, 10000)
-    plot_distribution(anchors, shape)
+    # plot_distribution(anchors, shape)
+    # plt.pause(1000)
