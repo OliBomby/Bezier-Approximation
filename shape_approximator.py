@@ -703,6 +703,9 @@ if __name__ == "__main__":
     from shapes import CircleArc
     shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
     shape = shape.make_shape(1000)
+    # from shapes import GosperCurve
+    # shape = GosperCurve(1)
+    # shape = shape.make_shape(1)
 
     firstTime = time.time()
     loss, anchors = approximate_shape3(shape, num_anchors, num_steps, num_testpoints)
