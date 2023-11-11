@@ -292,6 +292,33 @@ def generate_weights2(num_anchors, num_testpoints):
                 break
 
     return w
+    
+def anchor_positions_on_curve(anchors):
+    num_anchors = len(anchors)
+    n = num_anchors - 1
+    positions = []
+    for i in range(num_anchors):
+        t = i / n
+        cm = get_weight(i, n, t)
+        pos = anchors[i] * cm
+        
+        c = cm
+        for k in range(i, n):
+            c = c * (n - k) / (k + 1) / (1 - t) * t  # Move right
+            pos += anchors[k + 1] * c
+            if c == 0:
+                break
+
+        c = cm
+        for k in range(i - 1, -1, -1):
+            c = c / (n - k) * (k + 1) * (1 - t) / t  # Move left
+            pos += anchors[k] * c
+            if c == 0:
+                break
+        
+        positions.append(pos)
+
+    return positions
 
 
 def generate_weights_with_endpoints(num_anchors, num_testpoints):
