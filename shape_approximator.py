@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from numpy.linalg import norm
+from scipy.interpolate import interp1d
 from scipy.special.cython_special import binom
 import time
 
@@ -120,7 +121,6 @@ def plot(ll, a, p, l):
     ax4.cla()
     ax4.plot(a, color="green")
 
-    plt.draw()
     plt.pause(0.0001)
 
 
@@ -216,6 +216,14 @@ def pathify2_with_endpoints(pred, template):
         diff = pc - pf
 
         points[i] = pf + diff * r
+    return points
+
+
+def pathify3_with_endpoints(pred, template):
+    pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
+    pred_cumsum = np.cumsum(pred_d)
+    progs = pred_cumsum / pred_cumsum[-1]
+    points = interp1d(np.linspace(0, 1, len(template)), template, axis=0, assume_sorted=True, copy=False)(progs)
     return points
 
 
@@ -670,7 +678,7 @@ def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, 
             plot(loss_list, anchors, points, labels)
 
         if step % 100 == 0:
-            labels = pathify2_with_endpoints(points, template)
+            labels = pathify3_with_endpoints(points, template)
 
         learning_rate *= decay_rate
 
@@ -682,12 +690,10 @@ def approximate_shape3(shape, num_anchors, num_steps=5000, num_testpoints=1000, 
     return loss, anchors
 
 if __name__ == "__main__":
-    plt.ioff()
     plt.ion()
-    plt.figure()
     plt.show()
 
-    num_anchors = 500
+    num_anchors = 20
     num_steps = 20000
     num_testpoints = 5000
     num_templatepoints = 1000
