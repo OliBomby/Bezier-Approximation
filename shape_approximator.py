@@ -61,22 +61,26 @@ def plot_points(p):
 
 def plot(ll, a, p, l):
     ax1.cla()
-    ax1.plot(ll)
+    if ll is not None:
+        ax1.plot(ll)
     ax1.set_yscale('log')
 
     ax2.cla()
     ax2.axis('equal')
-    ax2.plot(p[:, 0], p[:, 1], color="green")
+    if p is not None:
+        ax2.plot(p[:, 0], p[:, 1], color="green")
     if a is not None:
         ax2.plot(a[:, 0], a[:, 1], color="red")
 
-    a = distance_array(l)
-    ax3.cla()
-    ax3.plot(a, color="red")
+    if l is not None:
+        a = distance_array(l)
+        ax3.cla()
+        ax3.plot(a, color="red")
 
-    a = distance_array(p)
-    ax4.cla()
-    ax4.plot(a, color="green")
+    if p is not None:
+        a = distance_array(p)
+        ax4.cla()
+        ax4.plot(a, color="green")
 
     plt.pause(0.0001)
 
@@ -237,6 +241,12 @@ def plot_distribution(anchors, shape):
     plot_alpha(reduced_labels)
 
 
+def plot_interpolation(anchors):
+    reduced_shape = bezier(anchors, 1000)
+    reduced_labels = pathify(reduced_shape, get_interpolator(shape))
+    plot(None, reduced_shape, reduced_labels, None)
+
+
 def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0):
     # Generate the weights for the bezier conversion
     print("Generating weights...")
@@ -306,9 +316,6 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         #     print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
         #     plot(loss_list, anchors, points, labels)
 
-        if loss < 0.01:
-            break
-
     points = np.matmul(w, anchors)
     loss = np.mean(np.square(labels - points))
 
@@ -320,16 +327,19 @@ if __name__ == "__main__":
     # plt.ion()
     # plt.show()
 
-    num_anchors = 10
-    num_steps = 10000
+    num_anchors = 7
+    num_steps = 1000
     num_testpoints = 200
 
-    from shapes import CircleArc
-    shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
-    shape = shape.make_shape(100)
+    # from shapes import CircleArc
+    # shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
+    # shape = shape.make_shape(100)
     # from shapes import GosperCurve
     # shape = GosperCurve(1)
     # shape = shape.make_shape(1)
+    from shapes import Wave
+    shape = Wave(3, 100)
+    shape = shape.make_shape(1000)
 
     firstTime = time.time()
     loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints)
@@ -339,5 +349,5 @@ if __name__ == "__main__":
     write_slider(anchors, total_length(shape))
 
     test_anchors(anchors, shape, 10000)
-    # plot_distribution(anchors, shape)
-    # plt.pause(1000)
+    plot_interpolation(anchors)
+    plt.pause(1000)
