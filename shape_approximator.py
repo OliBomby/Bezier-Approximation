@@ -126,8 +126,7 @@ def bezier(anchors, num_points):
 
 
 def pathify(pred, interpolator):
-    pred_d = np.concatenate((np.zeros(1), distance_array(pred)))
-    pred_cumsum = np.cumsum(pred_d)
+    pred_cumsum = dist_cumsum(pred)
     progs = pred_cumsum / pred_cumsum[-1]
     points = interpolator(progs)
     return points
@@ -312,7 +311,7 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         # Logging
         loss_list.append(loss)
 
-        # if step % 100 == 0:
+        # if step % 1 == 0:
         #     print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
         #     plot(loss_list, anchors, points, labels)
 
@@ -327,19 +326,19 @@ if __name__ == "__main__":
     # plt.ion()
     # plt.show()
 
-    num_anchors = 7
-    num_steps = 1000
+    num_anchors = 25
+    num_steps = 200
     num_testpoints = 200
 
     # from shapes import CircleArc
     # shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
     # shape = shape.make_shape(100)
-    # from shapes import GosperCurve
-    # shape = GosperCurve(1)
-    # shape = shape.make_shape(1)
-    from shapes import Wave
-    shape = Wave(3, 100)
-    shape = shape.make_shape(1000)
+    from shapes import GosperCurve
+    shape = GosperCurve(100)
+    shape = shape.make_shape(1)
+    # from shapes import Wave
+    # shape = Wave(3, 100)
+    # shape = shape.make_shape(1000)
 
     firstTime = time.time()
     loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints)
