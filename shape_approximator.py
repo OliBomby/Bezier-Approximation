@@ -6,6 +6,7 @@ from scipy.interpolate import interp1d
 from scipy.special import comb
 import time
 
+from bspline import bspline_basis
 
 matplotlib.use('TkAgg')
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
@@ -121,7 +122,13 @@ def dist_cumsum(shape):
 
 
 def bezier(anchors, num_points):
-    w = generate_weights(anchors.shape[0], num_points)
+    w = generate_bezier_weights(anchors.shape[0], num_points)
+    return np.matmul(w, anchors)
+
+
+def bspline(anchors, order, num_points):
+    t = np.linspace(0, 1, num_points)
+    w = bspline_basis(order, anchors.shape[0], t)
     return np.matmul(w, anchors)
 
 
@@ -139,7 +146,7 @@ def generate_weights_from_t(t):
     return w
 
 
-def generate_weights(num_anchors, num_testpoints):
+def generate_bezier_weights(num_anchors, num_testpoints):
     if num_anchors > 1000:
         return generate_weights_stable(num_anchors, num_testpoints)
 
@@ -227,30 +234,24 @@ def get_interpolator(shape):
     return interp1d(shape_d_cumsum / shape_d_cumsum[-1], shape, axis=0, assume_sorted=True, copy=False)
 
 
-def test_anchors(anchors, shape, num_testpoints):
-    new_shape = bezier(anchors, num_testpoints)
+def test_loss(new_shape, shape):
     labels = pathify(new_shape, get_interpolator(shape))
     loss = np.mean(np.square(labels - new_shape))
     print("loss: %s" % loss)
 
 
-def plot_distribution(anchors, shape):
-    reduced_shape = bezier(anchors, 1000)
-    reduced_labels = pathify(reduced_shape, get_interpolator(shape))
+def plot_distribution(new_shape, shape):
+    reduced_labels = pathify(new_shape, get_interpolator(shape))
     plot_alpha(reduced_labels)
 
 
-def plot_interpolation(anchors):
-    reduced_shape = bezier(anchors, 1000)
-    reduced_labels = pathify(reduced_shape, get_interpolator(shape))
-    plot(None, reduced_shape, reduced_labels, None)
+def plot_interpolation(new_shape, shape):
+    reduced_labels = pathify(new_shape, get_interpolator(shape))
+    plot(None, new_shape, reduced_labels, None)
 
 
-def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0):
-    # Generate the weights for the bezier conversion
-    print("Generating weights...")
-    w = generate_weights(num_anchors, num_testpoints)
-    wt = np.transpose(w)
+def piecewise_linear_to_spline(shape, weights, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+    weights_transpose = np.transpose(weights)
 
     # Generate pathify template
     # Means the same target shape but with equal spacing, so pathify runs in linear time
@@ -260,7 +261,7 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
     # Initialize the anchors
     print("Initializing anchors and test points...")
     anchors = interpolator(np.linspace(0, 1, num_anchors))
-    points = np.matmul(w, anchors)
+    points = np.matmul(weights, anchors)
     labels = pathify(points, interpolator)
 
     # Scamble this shit
@@ -271,9 +272,6 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         anchors += random_offset
 
     # Set up adam optimizer parameters
-    learning_rate = 8
-    b1 = 0.9
-    b2 = 0.92
     epsilon = 1E-8
     m = np.zeros(anchors.shape)
     v = np.zeros(anchors.shape)
@@ -287,7 +285,7 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
     step = 0
     print("Starting optimization loop")
     for step in range(1, num_steps):
-        points = np.matmul(w, anchors)
+        points = np.matmul(weights, anchors)
 
         if step % 11 == 0:
             labels = pathify(points, interpolator)
@@ -296,7 +294,7 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         loss = np.mean(np.square(diff))
 
         # Calculate gradients
-        grad = -1 / num_anchors * np.matmul(wt, diff)
+        grad = -1 / num_anchors * np.matmul(weights_transpose, diff)
 
         # Apply learnable mask
         grad *= learnable_mask
@@ -304,8 +302,8 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         # Update with adam optimizer
         m = b1 * m + (1 - b1) * grad
         v = b2 * v + (1 - b2) * np.square(grad)
-        m_corr = m / (1 - b1**step)
-        v_corr = v / (1 - b2**step)
+        m_corr = m / (1 - b1 ** step)
+        v_corr = v / (1 - b2 ** step)
         anchors -= learning_rate * m_corr / (np.sqrt(v_corr) + epsilon)
 
         # Logging
@@ -315,20 +313,39 @@ def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoint
         #     print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
         #     plot(loss_list, anchors, points, labels)
 
-    points = np.matmul(w, anchors)
+    points = np.matmul(weights, anchors)
     loss = np.mean(np.square(labels - points))
 
     # plot(loss_list, anchors, points, labels)
     print("Final loss: ", loss, step + 1)
     return loss, anchors
 
+
+def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+    # Generate the weights for the bezier conversion
+    print("Generating weights...")
+    weights = generate_bezier_weights(num_anchors, num_testpoints)
+
+    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, num_testpoints, retarded, learning_rate, b1, b2)
+
+
+def piecewise_linear_to_bspline(shape, order, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+    # Generate the weights for the B-spline conversion
+    print("Generating weights...")
+    weights = bspline_basis(order, num_anchors, np.linspace(0, 1, num_testpoints))
+
+    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, num_testpoints, retarded, learning_rate, b1, b2)
+
+
 if __name__ == "__main__":
     # plt.ion()
     # plt.show()
 
-    num_anchors = 25
+    num_anchors = 9
     num_steps = 200
     num_testpoints = 200
+
+    order = 2
 
     # from shapes import CircleArc
     # shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
@@ -341,12 +358,15 @@ if __name__ == "__main__":
     # shape = shape.make_shape(1000)
 
     firstTime = time.time()
-    loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints)
+    # loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints, learning_rate=8)
+    loss, anchors = piecewise_linear_to_bspline(shape, order, num_anchors, num_steps, num_testpoints, learning_rate=1)
     print("Time took:", time.time() - firstTime)
 
     ##PrintSlider(anchors, length(shape))
     write_slider(anchors, total_length(shape))
 
-    test_anchors(anchors, shape, 10000)
-    plot_interpolation(anchors)
+    # new_shape = bezier(anchors, 10000)
+    new_shape = bspline(anchors, order, 10000)
+    test_loss(new_shape, shape)
+    plot_interpolation(new_shape, anchors)
     plt.pause(1000)
