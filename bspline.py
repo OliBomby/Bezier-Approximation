@@ -13,29 +13,30 @@ def bspline_basis(p, n, x):
     Returns:
         array, matrix array of B-spline basis function values at x
     """
-    u = np.pad(np.linspace(0, 1, n + 1 - p), (p, 2), constant_values=(0, 1))  # knot vector
-    basis = np.empty((p + 1, len(x), n + p))
+    u = np.pad(np.linspace(0, 1, n + 1 - p), (p, p), constant_values=(0, 1))  # knot vector
     xb = x[:, None]
+    prev_order = np.where(xb != 1, np.where((u[None, p:-p - 1] <= xb) & (xb < u[None, p + 1:-p]), 1, 0), np.where((u[p:-p - 1] < 1) & (u[p + 1:-p] == 1), 1, 0)[None, :])
 
-    for c in range(p + 1):
-        if c == 0:
-            basis[c] = np.where(xb != 1, np.where((u[None, :-1] <= xb) & (xb < u[None, 1:]), 1, 0), np.where(u[1:] == 1, 1, 0)[None, :])
-        else:
-            alpha = np.nan_to_num((xb - u[None, :n + p - c]) / (u[c:n + p] - u[:n + p - c])[None, :])
-            beta = np.nan_to_num((u[None, c + 1:n + p + 1] - xb) / (u[c + 1:n + p + 1] - u[1:n + p - c + 1])[None, :])
-            basis[c, :, :n + p - c] = alpha * basis[c - 1, :, :n + p - c] + beta * basis[c - 1, :, 1:n + p - c + 1]
+    for c in range(1, p + 1):
+        alpha = (xb - u[None, p - c + 1:n]) / (u[p + 1:n + c] - u[p - c + 1:n])[None, :]
+        beta = (u[None, p + 1:n + c] - xb) / (u[p + 1:n + c] - u[p - c + 1:n])[None, :]
+        order = np.zeros((len(x), n - p + c))
+        order[:, 1:] += alpha * prev_order
+        order[:, :-1] += beta * prev_order
+        prev_order = order
 
-    return basis[-1, :, :n]
+    return prev_order
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Example usage:
-    n = 5  # number of control points
     p = 2  # order of the B-spline
+    n = 5  # number of control points
+    x = np.linspace(0, 1, 80)  # evaluation points
 
-    eval_points = np.linspace(0, 1, 80)  # evaluation points
-    basis_values = bspline_basis(p, n, eval_points)
+    basis_values = bspline_basis(p, n, x)
+    print(basis_values[-1])
     plt.plot(basis_values)
     plt.show()
