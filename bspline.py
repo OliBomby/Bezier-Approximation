@@ -3,7 +3,7 @@ import numpy as np
 
 def bspline_basis(p, n, x):
     """
-    Calculate the B-spline basis function B_{n,p} at point x.
+    Calculate the B-spline basis functions at specified evaluation points.
 
     Parameters:
         p: int, order of the B-spline
