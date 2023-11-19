@@ -13,9 +13,10 @@ def bspline_basis(p, n, x):
     Returns:
         array, matrix array of B-spline basis function values at x
     """
-    u = np.pad(np.linspace(0, 1, n + 1 - p), (p, p), constant_values=(0, 1))  # knot vector
     xb = x[:, None]
-    prev_order = np.where(xb != 1, np.where((u[None, p:-p - 1] <= xb) & (xb < u[None, p + 1:-p]), 1, 0), np.where((u[p:-p - 1] < 1) & (u[p + 1:-p] == 1), 1, 0)[None, :])
+    u = np.pad(np.linspace(0, 1, n + 1 - p), (p, p), constant_values=(0, 1))  # knot vector
+    prev_order = np.zeros((len(x), n - p))
+    prev_order[np.arange(len(x)), np.clip((x * (n - p)).astype(np.int32), 0, n - p - 1)] = 1
 
     for c in range(1, p + 1):
         alpha = (xb - u[None, p - c + 1:n]) / (u[p + 1:n + c] - u[p - c + 1:n])[None, :]
