@@ -19,12 +19,10 @@ def bspline_basis(p, n, x):
     prev_order[np.arange(len(x)), np.clip((x * (n - p)).astype(np.int32), 0, n - p - 1)] = 1
 
     for c in range(1, p + 1):
-        divisor = (u[p + 1:n + c] - u[p - c + 1:n])[None, :]
-        alpha = (xb - u[None, p - c + 1:n]) / divisor
-        beta = (u[None, p + 1:n + c] - xb) / divisor
+        alpha = (xb - u[None, p - c + 1:n]) / (u[p + 1:n + c] - u[p - c + 1:n])[None, :]
         order = np.zeros((len(x), n - p + c))
         order[:, 1:] += alpha * prev_order
-        order[:, :-1] += beta * prev_order
+        order[:, :-1] += (1 - alpha) * prev_order
         prev_order = order
 
     return prev_order
