@@ -341,25 +341,25 @@ if __name__ == "__main__":
     # plt.ion()
     # plt.show()
 
-    num_anchors = 9
+    num_anchors = 6
     num_steps = 200
     num_testpoints = 200
 
-    order = 2
+    order = 3
 
-    # from shapes import CircleArc
-    # shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
-    # shape = shape.make_shape(100)
-    from shapes import GosperCurve
-    shape = GosperCurve(100)
-    shape = shape.make_shape(1)
+    from shapes import CircleArc
+    shape = CircleArc(np.zeros(2), 100, 0, 2 * np.pi)
+    shape = shape.make_shape(100)
+    # from shapes import GosperCurve
+    # shape = GosperCurve(100)
+    # shape = shape.make_shape(1)
     # from shapes import Wave
     # shape = Wave(3, 100)
     # shape = shape.make_shape(1000)
 
     firstTime = time.time()
     # loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, num_steps, num_testpoints, learning_rate=8)
-    loss, anchors = piecewise_linear_to_bspline(shape, order, num_anchors, num_steps, num_testpoints, learning_rate=1)
+    loss, anchors = piecewise_linear_to_bspline(shape, order, num_anchors, num_steps, num_testpoints, learning_rate=6, b1=0.94, b2=0.86)
     print("Time took:", time.time() - firstTime)
 
     ##PrintSlider(anchors, length(shape))
