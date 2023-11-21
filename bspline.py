@@ -27,13 +27,44 @@ def bspline_basis(p, n, x):
 
     return prev_order
 
+def bspline_basis2(p, n, x):
+    m = len(x)
+    knots = np.zeros(n + p + 1)
+
+    for i in range(p):
+        knots[i] = 0
+        knots[n + p - i] = 1
+
+    for i in range(p, n + 1):
+        knots[i] = (i - p) / (n - p)
+
+    prev_order = np.zeros((m, n))
+
+    for i in range(m):
+        prev_order[i, min(max(int(x[i] * (n - p)), 0), n - p - 1)] = 1
+
+    for q in range(1, p + 1):
+        for i in range(m):
+            prev_alpha = 0
+
+            for j in range(n - p + q - 1):
+                alpha = (x[i] - knots[p - q + 1 + j]) / (knots[p + 1 + j] - knots[p - q + 1 + j])
+                alpha_val = alpha * prev_order[i, j]
+                beta_val = (1 - alpha) * prev_order[i, j]
+                prev_order[i, j] = prev_alpha + beta_val
+                prev_alpha = alpha_val
+
+            prev_order[i, n - p + q - 1] = prev_alpha
+
+    return prev_order
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Example usage:
-    p = 2  # order of the B-spline
-    n = 5  # number of control points
+    p = 4  # order of the B-spline
+    n = 8  # number of control points
     x = np.linspace(0, 1, 80)  # evaluation points
 
     basis_values = bspline_basis(p, n, x)
