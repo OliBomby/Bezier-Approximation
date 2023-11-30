@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 from numpy.linalg import norm
 from scipy.interpolate import interp1d
 from scipy.special import comb
@@ -8,20 +6,19 @@ import time
 
 from bspline import bspline_basis
 
-matplotlib.use('TkAgg')
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+global plt, fig, ax1, ax2, ax3, ax4
 
 
-def encode_anchors(anchors, s=1, o=np.zeros(0)):
-    li = np.round(anchors * s + o)
+def encode_anchors(anchors, s=1, o=np.zeros(2)):
+    li: np.ndarray = np.round(anchors * s + o)
     for i in range(len(li) - 1):
         if (li[i] == li[i + 1]).all():
             li[i + 1] += 1
             i -= 2
-    li = li.tolist()
-    p1 = li.pop(0)
+    li2: list = li.tolist()
+    p1 = li2.pop(0)
     ret = "B"
-    for p in li:
+    for p in li2:
         ret += "|" + str(int(p[0])) + ":" + str(int(p[1]))
     return p1, ret
 
@@ -35,16 +32,25 @@ def write_slider(anchors, plen=1, s=192, o=np.array([256, 192])):
     print("Successfully saved slidercode to slidercode.txt")
 
 
-def write_slider2(anchors, values, s=1):
+def write_slider2(anchors, values, s=1, out="slidercode.txt", verbose=True):
     p1, ret = encode_anchors(anchors, s)
     values[0] = str(int(p1[0]))
     values[1] = str(int(p1[1]))
     values[5] = ret
 
-    with open("slidercode.txt", "w+") as f:
+    with open(out, "w+") as f:
         f.write(",".join(values))
 
-    print("Successfully saved slidercode to slidercode.txt")
+    if verbose:
+        print("Successfully saved slidercode to slidercode.txt")
+
+
+def print_slider2(anchors, values, s=1):
+    p1, ret = encode_anchors(anchors, s)
+    values[0] = str(int(p1[0]))
+    values[1] = str(int(p1[1]))
+    values[5] = ret
+    print(",".join(values))
 
 
 def print_anchors(anchors):
@@ -139,7 +145,7 @@ def pathify(pred, interpolator):
     return points
 
 
-def generate_weights_from_t(t):
+def generate_weights_from_t(num_anchors, t):
     binoms = comb(num_anchors - 1, np.arange(num_anchors))
     p = np.power(t[:, np.newaxis], np.arange(num_anchors))
     w = binoms * p[::-1, ::-1] * p
@@ -151,7 +157,7 @@ def generate_bezier_weights(num_anchors, num_testpoints):
         return generate_weights_stable(num_anchors, num_testpoints)
 
     t = np.linspace(0, 1, num_testpoints)
-    return generate_weights_from_t(t)
+    return generate_weights_from_t(num_anchors, t)
 
 
 def generate_weights_stable(num_anchors, num_testpoints):
@@ -250,16 +256,18 @@ def plot_interpolation(new_shape, shape):
     plot(None, new_shape, reduced_labels, None)
 
 
-def piecewise_linear_to_spline(shape, weights, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+def piecewise_linear_to_spline(shape, weights, num_anchors, num_steps=5000, retarded=0, learning_rate=4, b1=0.8, b2=0.99, verbose=True, do_plot=False):
     weights_transpose = np.transpose(weights)
 
     # Generate pathify template
     # Means the same target shape but with equal spacing, so pathify runs in linear time
-    print("Initializing interpolation...")
+    if verbose:
+        print("Initializing interpolation...")
     interpolator = get_interpolator(shape)
 
     # Initialize the anchors
-    print("Initializing anchors and test points...")
+    if verbose:
+        print("Initializing anchors and test points...")
     anchors = interpolator(np.linspace(0, 1, num_anchors))
     points = np.matmul(weights, anchors)
     labels = pathify(points, interpolator)
@@ -283,7 +291,8 @@ def piecewise_linear_to_spline(shape, weights, num_anchors, num_steps=5000, num_
     # Training loop
     loss_list = []
     step = 0
-    print("Starting optimization loop")
+    if verbose:
+        print("Starting optimization loop")
     for step in range(1, num_steps):
         points = np.matmul(weights, anchors)
 
@@ -309,37 +318,47 @@ def piecewise_linear_to_spline(shape, weights, num_anchors, num_steps=5000, num_
         # Logging
         loss_list.append(loss)
 
-        # if step % 1 == 0:
-        #     print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
-        #     plot(loss_list, anchors, points, labels)
+        if do_plot and step % 100 == 0:
+            print("Step ", step, "Loss ", loss, "Rate ", learning_rate)
+            plot(loss_list, anchors, points, labels)
 
     points = np.matmul(weights, anchors)
     loss = np.mean(np.square(labels - points))
 
     # plot(loss_list, anchors, points, labels)
-    print("Final loss: ", loss, step + 1)
+    if verbose:
+        print("Final loss: ", loss, step + 1)
     return loss, anchors
 
 
-def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+def piecewise_linear_to_bezier(shape, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=4, b1=0.8, b2=0.99, verbose=True, plot=False):
     # Generate the weights for the bezier conversion
-    print("Generating weights...")
+    if verbose:
+        print("Generating weights...")
     weights = generate_bezier_weights(num_anchors, num_testpoints)
 
-    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, num_testpoints, retarded, learning_rate, b1, b2)
+    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, retarded, learning_rate, b1, b2, verbose, plot)
 
 
-def piecewise_linear_to_bspline(shape, order, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=8, b1=0.9, b2=0.92):
+def piecewise_linear_to_bspline(shape, order, num_anchors, num_steps=5000, num_testpoints=1000, retarded=0, learning_rate=4, b1=0.8, b2=0.99, verbose=True, plot=False):
     # Generate the weights for the B-spline conversion
-    print("Generating weights...")
+    if verbose:
+        print("Generating weights...")
     weights = bspline_basis(order, num_anchors, np.linspace(0, 1, num_testpoints))
 
-    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, num_testpoints, retarded, learning_rate, b1, b2)
+    return piecewise_linear_to_spline(shape, weights, num_anchors, num_steps, retarded, learning_rate, b1, b2, verbose, plot)
+
+
+def init_plot():
+    global plt, fig, ax1, ax2, ax3, ax4
+    import matplotlib
+    import matplotlib.pyplot as plt
+    matplotlib.use('TkAgg')
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
 
 
 if __name__ == "__main__":
-    # plt.ion()
-    # plt.show()
+    init_plot()
 
     num_anchors = 6
     num_steps = 200
@@ -369,4 +388,5 @@ if __name__ == "__main__":
     new_shape = bspline(anchors, order, 10000)
     test_loss(new_shape, shape)
     plot_interpolation(new_shape, anchors)
+    # noinspection PyUnboundLocalVariable
     plt.pause(1000)

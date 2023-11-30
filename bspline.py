@@ -13,6 +13,7 @@ def bspline_basis(p, n, x):
     Returns:
         array, matrix array of B-spline basis function values at x
     """
+    p = min(max(p, 1), n - 1)
     xb = x[:, None]
     u = np.pad(np.linspace(0, 1, n + 1 - p), (p, p), constant_values=(0, 1))  # knot vector
     prev_order = np.zeros((len(x), n - p))
