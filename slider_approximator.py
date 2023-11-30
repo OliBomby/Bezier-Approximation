@@ -16,10 +16,10 @@ def convert_slider(shape, num_anchors, args):
     firstTime = time.time()
     if args.mode == "bspline":
         loss, anchors = piecewise_linear_to_bspline(shape, args.order, num_anchors, args.num_steps, args.num_testpoints,
-                                                   args.retarded, args.learning_rate, args.b1, args.b2, not args.silent)
+                                                   args.retarded, args.learning_rate, args.b1, args.b2, not args.silent, args.plot)
     else:
         loss, anchors = piecewise_linear_to_bezier(shape, num_anchors, args.num_steps, args.num_testpoints,
-                                                   args.retarded, args.learning_rate, args.b1, args.b2, not args.silent)
+                                                   args.retarded, args.learning_rate, args.b1, args.b2, not args.silent, args.plot)
 
     if not args.silent:
         print("Time took:", time.time() - firstTime)
@@ -162,6 +162,3 @@ if __name__ == "__main__":
         main2(args)
     else:
         main(args)
-
-    if args.plot:
-        plt.waitforbuttonpress()
